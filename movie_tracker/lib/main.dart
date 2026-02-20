@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:convert';
 
 void main() => runApp(const CineTrackApp());
 
@@ -58,9 +60,106 @@ class _MainNavigationScreenState extends State<MainNavigationScreen> {
   }
 }
 
-class TrackerListScreen extends StatelessWidget {
+class TrackerListScreen extends StatefulWidget {
   final String title;
   const TrackerListScreen({super.key, required this.title});
+
+  @override
+  State<TrackerListScreen> createState() => _TrackerListScreenState();
+}
+
+class _TrackerListScreenState extends State<TrackerListScreen> {
+  int currentTab = 0;
+
+  List<String> watching = [];
+  List<String> plan = [];
+  List<String> finished = [];
+
+  @override
+  void initState() {
+    super.initState();
+    loadData();
+  }
+
+  // ---------------- LOAD ----------------
+  Future<void> loadData() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    setState(() {
+      watching = List<String>.from(
+          jsonDecode(prefs.getString("${widget.title}_watching") ?? "[]"));
+
+      plan = List<String>.from(
+          jsonDecode(prefs.getString("${widget.title}_plan") ?? "[]"));
+
+      finished = List<String>.from(
+          jsonDecode(prefs.getString("${widget.title}_finished") ?? "[]"));
+    });
+  }
+
+  // ---------------- SAVE ----------------
+  Future<void> saveData() async {
+    final prefs = await SharedPreferences.getInstance();
+
+    await prefs.setString(
+        "${widget.title}_watching", jsonEncode(watching));
+    await prefs.setString(
+        "${widget.title}_plan", jsonEncode(plan));
+    await prefs.setString(
+        "${widget.title}_finished", jsonEncode(finished));
+
+    // ignore: use_build_context_synchronously
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Saved successfully ✅")),
+    );
+  }
+
+  // ---------------- ADD ----------------
+  void addItem(String name) {
+    setState(() {
+      if (currentTab == 0) watching.add(name);
+      if (currentTab == 1) plan.add(name);
+      if (currentTab == 2) finished.add(name);
+    });
+  }
+
+  void showAddDialog() {
+    TextEditingController controller = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (_) => AlertDialog(
+        title: Text("Add to ${widget.title}"),
+        content: TextField(
+          controller: controller,
+          decoration: const InputDecoration(
+            hintText: "Enter title",
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Cancel"),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (controller.text.trim().isNotEmpty) {
+                addItem(controller.text.trim());
+                Navigator.pop(context);
+              }
+            },
+            child: const Text("Add"),
+          ),
+        ],
+      ),
+    );
+  }
+
+  List<String> getCurrentList() {
+    if (currentTab == 0) return watching;
+    if (currentTab == 1) return plan;
+    return finished;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -68,40 +167,59 @@ class TrackerListScreen extends StatelessWidget {
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          title: Text(title),
-          bottom: const TabBar(
-            tabs: [
+          title: Text(widget.title),
+          actions: [
+            IconButton(
+              icon: const Icon(Icons.save),
+              onPressed: saveData,
+            )
+          ],
+          bottom: TabBar(
+            onTap: (index) {
+              setState(() {
+                currentTab = index;
+              });
+            },
+            tabs: const [
               Tab(text: "Watching"),
               Tab(text: "Plan to Watch"),
               Tab(text: "Finished"),
             ],
           ),
         ),
-        body: TabBarView(
-          children: [
-            _buildGrid("Currently Tracking"),
-            _buildGrid("On the Wishlist"),
-            _buildGrid("History"),
-          ],
-        ),
-        floatingActionButton: FloatingActionButton(
-          onPressed: () {},
-          child: const Icon(Icons.search),
-        ),
-      ),
-    );
-  }
+        body: getCurrentList().isEmpty
+            ? Center(
+                child: Text(
+                  "Nothing here yet.\nTap + to add something!",
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.grey[600]),
+                ),
+              )
+            : ListView.builder(
+                itemCount: getCurrentList().length,
+                itemBuilder: (context, index) {
+                  final item = getCurrentList()[index];
 
-  Widget _buildGrid(String emptyMessage) {
-    // This is a placeholder. Later, this will pull from your Database.
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Icon(Icons.movie_filter, size: 64, color: Colors.grey[700]),
-          const SizedBox(height: 16),
-          Text(emptyMessage, style: TextStyle(color: Colors.grey[600])),
-        ],
+                  return Card(
+                    margin: const EdgeInsets.all(8),
+                    child: ListTile(
+                      title: Text(item),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete),
+                        onPressed: () {
+                          setState(() {
+                            getCurrentList().removeAt(index);
+                          });
+                        },
+                      ),
+                    ),
+                  );
+                },
+              ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: showAddDialog,
+          child: const Icon(Icons.add),
+        ),
       ),
     );
   }
